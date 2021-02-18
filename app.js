@@ -17,6 +17,8 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
 const findOrCreate = require("mongoose-findorcreate");
 
+const db = require(__dirname + "/db/db.js");
+
 const app = express();
 
 app.set('view engine', 'ejs');
@@ -37,17 +39,21 @@ app.use(passport.session());
 
 // Data base
 
-mongoose.connect("mongodb://localhost:27017/userDB", { useUnifiedTopology: true, useNewUrlParser: true, useFindAndModify: false });
-mongoose.set('useCreateIndex', true);
+// mongoose.connect("mongodb://localhost:27017/userDB", { useUnifiedTopology: true, useNewUrlParser: true, useFindAndModify: false });
+// mongoose.set('useCreateIndex', true);
 
-const userSchema = new mongoose.Schema({
-    username: String,
-    password: String,
-    googleId: String,
-    secret: [{
-        type: String
-    }]
-});
+db.connectDB();
+
+// const userSchema = new mongoose.Schema({
+//     username: String,
+//     password: String,
+//     googleId: String,
+//     secret: [{
+//         type: String
+//     }]
+// });
+
+const userSchema = db.userSchema();
 
 
 userSchema.plugin(passportLocalMongoose);
@@ -56,8 +62,9 @@ userSchema.plugin(findOrCreate);
 
 // userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"] });
 
+const User = db.userModel(userSchema);
 
-const User = mongoose.model("User", userSchema);
+// const User = mongoose.model("User", userSchema);
 
 passport.use(User.createStrategy());
 
@@ -124,15 +131,12 @@ app.route("/login")
         } else {
             passport.authenticate("local")(req, res, function() {
 
-                res.redirect("/secret");
+                res.redirect("/secret/" + user.username);
 
             })
         }
 
     })
-
-
-
 
 
 
@@ -171,8 +175,9 @@ app.route("/register")
 .post(function(req, res) {
 
 
-    User.register({ username: req.body.username, role: "artiste" }, req.body.password, function(err, user) {
+    User.register({ username: req.body.username, role: req.body.role }, req.body.password, function(err, user) {
         if (err) {
+            console.log(err);
             res.redirect("/register");
         } else {
             passport.authenticate("local")(req, res, function() {
@@ -225,16 +230,19 @@ app.get("/auth/google/secrets",
 
 // ***************************************secret route ***************************************************
 
-app.route("/secret")
-    .get(function(req, res) {
+app.route("/secret/:username")
+    .get(async function(req, res) {
         if (req.isAuthenticated()) {
-            User.find({ "secret": { $ne: null } }, function(err, rs) {
-                if (!err) {
-                    if (rs) {
-                        res.render("secrets", { userWithSecret: rs });
-                    }
-                }
-            })
+            // User.find({ "secret": { $ne: null } }, function(err, rs) {
+            //     if (!err) {
+            //         if (rs) {
+            //             res.render("secrets", { userWithSecret: rs });
+            //         }
+            //     }
+            // });
+            const secret = await db.getSecrets(User);
+
+            res.render("secrets", { userWithSecret: secret });
 
 
         } else {
@@ -253,26 +261,31 @@ app.route("/submit")
 
     })
 
-.post(function(req, res) {
+.post(async function(req, res) {
     const submitedSecret = req.body.secret;
 
-    User.findById({ _id: req.user.id }, function(err, rs) {
+    await db.addSecret(User, submitedSecret, req.user.id);
 
-        if (!err) {
-            if (rs) {
-                rs.secret.push(submitedSecret);
-                rs.save(function() {
+    res.redirect("/secret");
 
-                    res.redirect("/secret");
 
-                })
-            }
+    // User.findById({ _id: req.user.id }, function(err, rs) {
 
-        }
+    //     if (!err) {
+    //         if (rs) {
+    //             rs.secret.push(submitedSecret);
+    //             rs.save(function() {
 
-    })
+    //                 res.redirect("/secret");
 
-})
+    //             })
+    //         }
+
+    //     }
+
+    // })
+
+});
 
 
 
